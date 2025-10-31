@@ -1,21 +1,21 @@
 import streamlit as st
-import joblib
 import pandas as pd
+import joblib
 import os
-import re
 
 st.title("🐟 Balık Raf Ömrü Tahmin Uygulaması")
 st.write("Balığın depolama koşullarına göre tahmini kalan raf ömrünü hesaplayabilirsiniz.")
 
 # ---- Kullanıcı girişleri ----
 species = st.selectbox("Balık Türü", ["Somon", "Levrek"])
-storage_hours = st.number_input("Depolama süresi (saat)", min_value=0, value=24, step=1)
-storage_temp = st.number_input("Depolama sıcaklığı (°C)", value=0)
-violation_hours = st.number_input("İhlal süresi (saat)", min_value=0, value=0)
-violation_temp = st.number_input("İhlal sıcaklığı (°C)", value=0)
+storage_hours = st.number_input("Depolama süresi (saat)", min_value=0, max_value=1440, value=24, step=1)
+storage_temp = st.number_input("Depolama sıcaklığı (°C)", min_value=-5.0, max_value=25.0, value=4.0, step=0.1)
+violation_hours = st.number_input("İhlal süresi (saat)", min_value=0, max_value=1440, value=0, step=1)
+violation_temp = st.number_input("İhlal sıcaklığı (°C)", min_value=-5.0, max_value=25.0, value=0.0, step=0.1)
+
 model_choice = st.radio("Model Seçimi", ["Random Forest", "XGBoost"])
 
-# ---- Model dosya yolunu çöz ----
+# ---- Model yolunu çöz ----
 def resolve_model_path(choice: str) -> str:
     fname = "rf_model_app.joblib" if choice == "Random Forest" else "xgb_model_app.joblib"
     paths = [os.path.join("models", fname), os.path.join("Models", fname)]
@@ -33,34 +33,30 @@ if st.button("Tahmin Et"):
         else:
             model = joblib.load(model_path)
 
-            # Modelin beklediği özellik adlarını tespit et
+            # Modelin beklediği feature'ları tespit et
             if hasattr(model, "feature_names_in_"):
                 expected_features = list(model.feature_names_in_)
             else:
-                candidate = ["storage_hours", "storage_temp", "violation_hours", "violation_temp", 
-                             "species_Somon", "species_Levrek"]
-                expected_features = candidate
+                # Örnek feature seti
+                expected_features = ["storage_hours","storage_temp",
+                                     "violation_hours","violation_temp",
+                                     "species_Levrek","species_Somon"]
 
-            # Kullanıcı girdisini modelin beklediği kolon setine çevir
+            # Kullanıcı girdilerini model formatına çevir
             row = {col: 0 for col in expected_features}
 
-            # Saat/sıcaklık kolonları
-            if "storage_hours" in expected_features:
-                row["storage_hours"] = storage_hours
-            if "storage_temp" in expected_features:
-                row["storage_temp"] = storage_temp
-            if "violation_hours" in expected_features:
-                row["violation_hours"] = violation_hours
-            if "violation_temp" in expected_features:
-                row["violation_temp"] = violation_temp
+            for col, val in [("storage_hours", storage_hours),
+                             ("storage_temp", storage_temp),
+                             ("violation_hours", violation_hours),
+                             ("violation_temp", violation_temp)]:
+                if col in row:
+                    row[col] = val
 
-            # Tür kolonları
             sp_col = f"species_{species}"
-            if sp_col in expected_features:
+            if sp_col in row:
                 row[sp_col] = 1
 
-            # DataFrame oluştur
-            X_input = pd.DataFrame([[row[c] for c in expected_features]], columns=expected_features)
+            X_input = pd.DataFrame([row], columns=expected_features)
 
             pred = model.predict(X_input)[0]
             st.success(f"Tahmini kalan raf ömrü: {pred:.1f} saat")
